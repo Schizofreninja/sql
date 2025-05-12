@@ -1,0 +1,105 @@
+примеры SQL-запросов, которые можно использовать.
+--вывести список продуктов, которые покупал член семьи со статусом «son»:
+SELECT good_name FROM FamilyMembers
+INNER JOIN Payments
+ON Payments.family_member = FamilyMembers.member_id
+INNER JOIN Goods
+ON Goods.good_id = Payments.good
+WHERE status = 'son'
+
+-- вывести идентификатор (поле room_id) и среднюю оценку комнаты (поле rating, для вывода используйте псевдоним avg_score), составленную на основании отзывов из таблицы Reviews:
+SELECT room_id, avg(rating) AS avg_score FROM Reviews
+INNER JOIN Reservations
+ON Reservations.id = Reviews.reservation_id
+GROUP BY room_id
+
+--самая дорогая покупка каждого члена семьи
+SELECT FamilyMembers.member_name, (
+SELECT SUM(Payments.unit_price * Payments.amount)
+    FROM Payments
+    WHERE Payments.family_member = FamilyMembers.member_id
+) AS total_spent
+FROM FamilyMembers;
+____________________________________________________________
+WITH MemberPayments AS (
+  -- Считаем количество покупок и общую сумму по каждому члену семьи
+  SELECT
+    fm.member_id,
+    fm.member_name,
+    COUNT(p.payment_id)    AS total_payments,
+    SUM(p.amount)          AS total_spent
+  FROM FamilyMembers AS fm
+  LEFT JOIN Payments AS p
+    ON p.family_member = fm.member_id
+  GROUP BY fm.member_id, fm.member_name
+), 
+
+MemberGoods AS (
+  -- Извлекаем самую дорогую и самую дешёвую покупку каждого члена
+  SELECT
+    fm.member_id,
+    MAX(g.price)           AS max_price,
+    MIN(g.price)           AS min_price
+  FROM FamilyMembers AS fm
+  INNER JOIN Payments AS pay
+    ON pay.family_member = fm.member_id
+  INNER JOIN Goods AS g
+    ON g.good_id = pay.good
+ GROUP BY fm.member_id
+)
+
+SELECT
+  mp.member_id,
+  mp.member_name,
+  mp.total_payments,
+  mp.total_spent,
+  mg.max_price,
+  mg.min_price,
+  -- Присваиваем рейтинг по сумме потраченных средств
+  CASE
+    WHEN mp.total_spent >= 1000 THEN 'VIP'
+    WHEN mp.total_spent BETWEEN 500 AND 999 THEN 'Gold'
+    WHEN mp.total_spent BETWEEN 100 AND 499 THEN 'Silver'
+    ELSE 'Bronze'
+  END AS membership_level
+FROM MemberPayments AS mp
+LEFT JOIN MemberGoods AS mg
+  ON mg.member_id = mp.member_id
+WHERE
+  -- Берём только активных членов (с более чем 0 покупок)
+  mp.total_payments > 0
+  AND mp.member_name LIKE 'A%'   -- только имена, начинающиеся на «A»
+ORDER BY
+  mp.total_spent DESC             -- сортируем по убыванию потраченной суммы
+LIMIT 10;                         -- выводим топ-10 по расходам
+_________________________________________________________________
+Пояснения по оператором:
+•	SELECT city, COUNT(*) AS members_count — выбираем город и считаем число строк в каждой группе.
+•	FROM FamilyMembers — из таблицы FamilyMembers.
+•	WHERE age >= 18 — только совершеннолетние (фильтрация на уровне строк).
+•	GROUP BY city — группируем по городу.
+•	HAVING COUNT(*) > 3 — отбираем только те города, где членов больше трёх (фильтрация на уровне групп).
+•	ORDER BY members_count DESC — сортируем результат по убыванию количества.
+_______________________________________________________________
+  SELECT
+  family_id,                       -- по какой семье агрегируем
+  COUNT(*)         AS member_count,-- считаем число членов семьи
+  AVG(age)          AS avg_age     -- считаем средний возраст
+FROM
+  FamilyMembers
+WHERE
+  age >= 18                         -- только совершеннолетние участники
+GROUP BY
+  family_id                         -- группируем по идентификатору семьи
+HAVING
+  COUNT(*) > 2                      -- оставляем только семьи с более чем 2 совершеннолетними
+ORDER BY
+  member_count DESC;                -- сортируем по убыванию числа членов
+_________________________________________________________________
+Пояснения по операторам:
+1.	SELECT — выбираем family_id, общее число членов (COUNT(*)) и средний возраст (AVG(age)).
+2.	FROM — из таблицы FamilyMembers.
+3.	WHERE — сначала фильтруем только тех, у кого age >= 18.
+4.	GROUP BY — объединяем строки по family_id.
+5.	HAVING — оставляем только группы, где COUNT(*) > 2.
+6.	ORDER BY — сортируем результат по member_count в порядке убывания.
